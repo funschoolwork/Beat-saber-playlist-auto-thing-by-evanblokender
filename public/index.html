@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>ScoreSaber Ranked Playlist by EvanBlokEnder</title>
   <style>
     body {
@@ -61,7 +61,7 @@
         if (!generating) {
           clearInterval(interval);
           generateBtn.disabled = false;
-          generateBtn.textContent = "Generate Latest Playlist";
+          generateBtn.style.display = "none"; // Hide generate button when done
           statusDiv.textContent = "✅ Playlist is ready.";
           downloadDiv.style.display = "block";
         } else {
@@ -93,6 +93,7 @@
       const res = await fetch("/status");
       const { generating } = await res.json();
       if (!generating) {
+        generateBtn.style.display = "none";  // Hide on load if playlist ready
         downloadDiv.style.display = "block";
       }
     });
