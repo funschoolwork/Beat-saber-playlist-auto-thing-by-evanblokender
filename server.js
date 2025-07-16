@@ -5,40 +5,15 @@ const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const BP_LIST_PATH = path.join(__dirname, "ranked.bplist");
 
-// Serve static files from 'public' folder if needed
+const BP_LIST_PATH = path.join(__dirname, "ranked.bplist");
+const TMP_JSON_PATH = path.join(__dirname, "ranked.tmp.json");
+let isGenerating = false;
+
 app.use(express.static("public"));
 
-async function fetchRankedMaps() {
-  let page = 1;
-  const songs = [];
-
-  while (true) {
-    const res = await fetch(`https://scoresaber.com/api/leaderboards?ranked=true&page=${page}`);
-    if (!res.ok) {
-      console.error(`Failed to fetch page ${page}: ${res.status} ${res.statusText}`);
-      break;
-    }
-    const data = await res.json();
-
-    if (!data.leaderboards || data.leaderboards.length === 0) {
-      break;
-    }
-
-    songs.push(
-      ...data.leaderboards.map(lb => ({
-        hash: lb.songHash.toUpperCase(),
-        songName: lb.songName,
-        difficulties: []
-      }))
-    );
-
-    page++;
-    if (page > 100) break; // safety limit
-  }
-
-  return songs;
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function generateBplist(songs) {
@@ -46,64 +21,106 @@ function generateBplist(songs) {
     playlistTitle: "ScoreSaber Ranked",
     playlistAuthor: "EvanBlokEnder",
     customData: {
-      icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAAACXBIWXMAAC4jAAAuIwF4pT92AAAJg0lEQVR4nO3dQWpTUQCG0TzJJoKB0CBuwInrcWFdjxN3IA2FSueOhefEgYgKJi+5z37nzB/8aULux82g0zzPGwCg5dXoAQDA7QkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAoO0lD0/TtNQOfnE87P2fZuBFeHh8clhcyTyff1S4AQCAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQtB094FqOh/08esMlPn86jp4AsIg37zb/9ffxw+PTNHrDNbgBAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgaHvJw8fDfl5qyNI+3n8ZPeEi09dvoycALOLzp7ejJ1zkzbvNas+6zWYznfugGwAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIK2owfATd09j17Amp12oxfAzbgBAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAEbUcP4IW6ex69AP7dWj+3p93oBbxAAoAeX6b8zloPf7gSPwEAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAICg7egBcHN3z6MX/NlpN3rBda35bw8xAoDrWOtB5gDib9b6uYUr8BMAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAELQdPQD4yd3z6AVAhACg5bQbveDPKof/mt8DCPETAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgaDt6APDDaTd6ARDiBgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgKBpnufzH56mBacs63jYn//CVuDj/ZfREwAW8f7D69ETLvLw+LTaw+6SM9wNAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQdM8z+c/PE0LTuFnx8P+/DcGYEUeHp8cFldyyRnuBgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABA0DTP8+gNAMCNuQEAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAEPQdRxFJ5MUsCjMAAAAASUVORK5CYIKP08ZLOQyjuWpp/ZW0/q04CWBpBADHWMt67zMZDp6desgtjBl33pO907+SnP5I0r2bTGtZX/vXnLz2yaTvTr3mVmMj2lgiAcCxNmy/lmH71aln3MI2B8MD6cOvp7fTcZycJKuMqy+nZ52WId5dw/0nADjmlvAlrX5943j9IQAOnw/PAxwl51YAUJAAAICCBAAAFCQAAKAgAQAABQkAAChIAABAQQIAAAoSAABQkAAAgIIEAAAUJAAAoCABAAAFCQAAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJAAAoSAAAQEECAAAKEgAAUNB66gFAkrTXPPA8wNETADALB0l/NS1jkj71mBlYpeXa1CPgWBMAMLkhq/3/yanLH0vaOgIgSVra9vm0vhenAXA0BABMrqWNF7LeOz/1kJlp8TUlODoCAGahJVlNPQIoRF4DQEECAAAKEgAAUJAAAICCBAAAFCQAAKAgAQAABQkAAChIAABAQQIAAAoSAABQkAAAgIIEAAAUJAAAoCABAAAFCQAAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJAAAoSAAAQEECAAAKEgAAUJAAAICCBAAAFCQAAKAgAQAABQkAAChIAABAQQIAAAoSAABQkAAAgIIEAAAUJAAAoCABAAAFCQAAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJAAAoSAAAQEECAAAKEgAAUJAAAICCBAAAFCQAAKAgAQAABQkAAChIAABAQQIAAAoSAABQkAAAgIIEAAAUJAAAoCABAAAFCQAAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJAAAoSAAAQEECAAAKEgAAUJAAAICCBAAAFCQAAKAgAQAABQkAAChIAABAQQIAAAoSAABQkAAAgIIEAAAUJAAAoCABAAAFCQAAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJAAAoSAAAQEECAAAKEgAAUJAAAICCBAAAFCQAAKAgAQAABQkAAChIAABAQQIAAAoSAABQkAAAgIIEAAAUJAAAoCABAAAFCQAAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJAAAoSAAAQEECAAAKEgAAUJAAAICCBAAAFCQAAKAgAQAABQkAAChIAABAQQIAAAoSAABQkAAAgIIEAAAUJAAAoCABAAAFCQAAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJAAAoSAAAQEECAAAKEgAAUJAAAICCBAAAFCQAAKAgAQAABQkAAChIAABAQQIAAAoSAABQkAAAgIIEAAAUJAAAoCABAAAFCQAAKEgAAEBBAgAAClpPPeB2tHbzsRjt+gOAmmb+GrCIALi21/LKlZb1kPSpx9ym1XrI2bEdXgBLGQ0wR21hN9KhLWLyOsk/Tz3iFvrnvnDikee+8fC7e7Iz9yc0Ofybn3sw+a2PbvPE47vp49SLABaitQyr9bdPUff2v5Vn/m8/L74yzP0N9c1fYWh59st7u/v7/VJr2WamZwHr1tpHpx5xCwdPf2Xnp77wlZ1PJDk39Zjb0XvyyLkxP/8TL+WRU/vpC4gWgNlow7c/9n3p8sX82V8+nH//r5NZLehbaz35zytXx4+1lm9mrgFw/vz5b0w94s1sNpsMLS9l9ocp32277Rm3owAAuCOHx6atJdu9IS+/fJCLl9ZZLehj4Ja8lOQ/kly6cOH5qee8rtl/B6C1lt77LOvpltvjKwAA96R95xfBF/Ri0Fprsz6zmPU4AOBoCAAAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJAAAoSAAAQEECAAAKEgAAUJAAAICCBAAAFCQAAKAgAQAABQkAAChIAABAQQIAAAoSAABQkAAAgIIEAAAUJAAAoCABAAAFCQAAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJAAAoSAAAQEHrqQccZ60dPlQWwJ27cQ9tbeoldzd/6gG3sqQAGJP06z9nb+xpF18ehvMXV+l96jUAy9NacvVa291u2+Us5N5/3ZDkm3PfvJQA+GqSjyc5ncMImLt+Zbc99vFPnf3Z0yf7g1OPAViklvHt57affPVq/ia9bxf0Zqq11r7RWrvcZzx69gEwjmOSPJvk96becvv6uLc/vP+L/7vzVBIBAHB3ek/+O8k/vfDC81NvOXZmHwAXLlxIDo9Rdqfecrs2m01aa3vDMOP0A1iGdvLkyazX6xwcHEy95Vjx/TQAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJAAAoSAAAQEECAAAKEgAAUJAAAICCBAAAFCQAAKAgAQAABQkAAChIAABAQQIAAAoSAABQkAAAgIIEAAAUJAAAoCABAAAFCQAAKEgAAEBBAgAAChIAAFCQAACAggQAABQkAACgIAEAAAUJgKPTkqymHgGwcF6njsh66gHH2KUkn07yaJI+9RiABRqTfGnqEQAAAAAAAAAAc/b/XDRhRZ+1HR4AAAAldEVYdGRhdGU6Y3JlYXRlADIwMTktMDktMDhUMjM6MTc6MzQrMDI6MDDWfZg8AAAAJXRFWHRkYXRlOm1vZGlmeQAyMDE5LTA5LTA4VDIzOjE3OjM0KzAyOjAwpyAggAAAAFd6VFh0UmF3IHByb2ZpbGUgdHlwZSBpcHRjAAB4nOPyDAhxVigoyk/LzEnlUgADIwsuYwsTIxNLkxQDEyBEgDTDZAMjs1Qgy9jUyMTMxBzEB8uASKBKLgDqFxF08kI1lQAAAABJRU5ErkJggg=="
+      icon: "data:image/png;base64,...(your icon here)..."
     },
     songs
   }, null, 2);
 }
 
-async function updateBplist() {
-  try {
-    console.log("Updating ranked.bplist...");
-    const songs = await fetchRankedMaps();
-    const bplist = generateBplist(songs);
-    fs.writeFileSync(BP_LIST_PATH, bplist);
-    console.log(`ranked.bplist updated with ${songs.length} songs.`);
-  } catch (error) {
-    console.error("Error updating ranked.bplist:", error);
+async function loadTempSongs() {
+  if (fs.existsSync(TMP_JSON_PATH)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(TMP_JSON_PATH));
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
   }
+  return [];
 }
 
-app.get("/ranked.bplist", (req, res) => {
-  res.download(BP_LIST_PATH, "ranked.bplist");
-});
+async function fetchAllRankedSongs(existing = []) {
+  const seen = new Set(existing.map(s => s.hash));
+  const songs = [...existing];
+  let page = Math.floor(songs.length / 20) + 1;
 
-app.use(express.static("public"));
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  updateBplist(); // initial update on start
-  setInterval(updateBplist, 6 * 60 * 60 * 1000); // update every 6 hours
-});
-
-// Fetch function reused here:
-async function fetchRankedMaps() {
-  let page = 1;
-  const songs = [];
+  console.log("Fetching ALL pages until no more songs...");
 
   while (true) {
     const res = await fetch(`https://scoresaber.com/api/leaderboards?ranked=true&page=${page}`);
     if (!res.ok) {
-      console.error(`Failed to fetch page ${page}: ${res.status} ${res.statusText}`);
+      console.error(`Page ${page} failed: ${res.status}`);
       break;
     }
+
     const data = await res.json();
+    if (!data.leaderboards || data.leaderboards.length === 0) break;
 
-    if (!data.leaderboards || data.leaderboards.length === 0) {
-      break;
+    let added = 0;
+    for (const lb of data.leaderboards) {
+      const hash = lb.songHash.toUpperCase();
+      if (!seen.has(hash)) {
+        songs.push({
+          hash,
+          songName: lb.songName,
+          difficulties: []
+        });
+        seen.add(hash);
+        added++;
+      }
     }
 
-    songs.push(
-      ...data.leaderboards.map(lb => ({
-        hash: lb.songHash.toUpperCase(),
-        songName: lb.songName,
-        difficulties: []
-      }))
-    );
-
+    console.log(`Page ${page}: Added ${added} new songs.`);
     page++;
-    if (page > 100) break;
+    await sleep(500);
   }
 
   return songs;
 }
+
+async function updateBplist() {
+  if (isGenerating) return;
+  isGenerating = true;
+
+  try {
+    const existing = await loadTempSongs();
+    const allSongs = await fetchAllRankedSongs(existing);
+
+    fs.writeFileSync(TMP_JSON_PATH, JSON.stringify(allSongs, null, 2));
+    fs.writeFileSync(BP_LIST_PATH, generateBplist(allSongs));
+
+    console.log(`✅ ranked.bplist updated with ${allSongs.length} songs.`);
+  } catch (e) {
+    console.error("❌ Error generating playlist:", e);
+  } finally {
+    isGenerating = false;
+  }
+}
+
+app.get("/status", (req, res) => {
+  res.json({ generating: isGenerating });
+});
+
+app.get("/generate", async (req, res) => {
+  if (isGenerating) return res.status(202).send("Already generating...");
+  res.send("Generating playlist...");
+  updateBplist();
+});
+
+app.get("/ranked.bplist", (req, res) => {
+  if (isGenerating) {
+    return res.status(202).send("Playlist is still generating. Please wait.");
+  }
+
+  if (fs.existsSync(BP_LIST_PATH)) {
+    res.download(BP_LIST_PATH, "ranked.bplist");
+  } else {
+    res.status(404).send("Playlist not found.");
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  updateBplist();
+  setInterval(updateBplist, 6 * 60 * 60 * 1000); // every 6h
+});
