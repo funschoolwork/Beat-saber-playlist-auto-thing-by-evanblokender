@@ -5,120 +5,122 @@ const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const BP_LIST_PATH = path.join(__dirname, "ranked.bplist");
 
-// Serve static files (like index.html)
+const BP_LIST_PATH = path.join(__dirname, "ranked.bplist");
+const TMP_JSON_PATH = path.join(__dirname, "ranked.tmp.json");
+let isGenerating = false;
+
 app.use(express.static("public"));
 
-// Utility: fetch all ranked songs page by page (no 100 page limit here, but you can add one)
-async function fetchAllRankedSongs() {
-  let page = 1;
-  const songs = [];
-
-  while (true) {
-    console.log(`Fetching page ${page} from ScoreSaber...`);
-    const res = await fetch(`https://scoresaber.com/api/leaderboards?ranked=true&page=${page}`);
-    if (!res.ok) {
-      console.error(`Failed to fetch page ${page}: ${res.status} ${res.statusText}`);
-      break;
-    }
-    const data = await res.json();
-
-    if (!data.leaderboards || data.leaderboards.length === 0) {
-      console.log("No more leaderboards found.");
-      break;
-    }
-
-    songs.push(
-      ...data.leaderboards.map(lb => ({
-        hash: lb.songHash.toUpperCase(),
-        songName: lb.songName,
-        difficulties: []
-      }))
-    );
-
-    page++;
-    // Optional: safety break to avoid abuse, can remove or increase this
-    if (page > 200) {
-      console.log("Reached safety page limit 200, stopping fetch.");
-      break;
-    }
-  }
-
-  return songs;
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Generate playlist JSON string from songs array
 function generateBplist(songs) {
   return JSON.stringify({
     playlistTitle: "ScoreSaber Ranked",
     playlistAuthor: "EvanBlokEnder",
     customData: {
-      icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAAACXBIWXMAAC4jAAAuIwF4pT92AAAJg0lEQVR4nO3dQWpTUQCG0TzJJoKB0CBuwInrcWFdjxN3IA2FSueOhefEgYgKJi+5z37nzB/8aULux82g0zzPGwCg5dXoAQDA7QkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAoO0lD0/TtNQOfnE87P2fZuBFeHh8clhcyTyff1S4AQCAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgaHvJw8fDfl5qyNI+3n8ZPeEi09dvoycALOLzp7ejJ1zkzbvNas+6zWYznfugGwAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAACBIAABAkAAAgSAAAQJAAAIAgAQAAQdM8z+c/PE0LTuFnx8P+/DcGYEUeHp8cFldyyRnuBgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABA0DTP8+gNAMCNuQEAgCABAABBAgAAggQAAAQJAAAIEgAAECQAACBIAABAkAAAgCABAABBAgAAggQAAAQJAAAIEgAAEPQdRxFJ5MUsCjMAAAAASUVORK5CYII="
+      icon: "data:image/png;base64,...(your icon here)..."
     },
     songs
   }, null, 2);
 }
 
-// Update playlist file on disk
+async function loadTempSongs() {
+  if (fs.existsSync(TMP_JSON_PATH)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(TMP_JSON_PATH));
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function fetchAllRankedSongs(existing = []) {
+  const seen = new Set(existing.map(s => s.hash));
+  const songs = [...existing];
+  let page = Math.floor(songs.length / 20) + 1;
+
+  console.log("Fetching ALL pages until no more songs...");
+
+  while (true) {
+    const res = await fetch(`https://scoresaber.com/api/leaderboards?ranked=true&page=${page}`);
+    if (!res.ok) {
+      console.error(`Page ${page} failed: ${res.status}`);
+      break;
+    }
+
+    const data = await res.json();
+    if (!data.leaderboards || data.leaderboards.length === 0) break;
+
+    let added = 0;
+    for (const lb of data.leaderboards) {
+      const hash = lb.songHash.toUpperCase();
+      if (!seen.has(hash)) {
+        songs.push({
+          hash,
+          songName: lb.songName,
+          difficulties: []
+        });
+        seen.add(hash);
+        added++;
+      }
+    }
+
+    console.log(`Page ${page}: Added ${added} new songs.`);
+    page++;
+    await sleep(500);
+  }
+
+  return songs;
+}
+
 async function updateBplist() {
+  if (isGenerating) return;
+  isGenerating = true;
+
   try {
-    console.log("Updating ranked.bplist...");
+    const existing = await loadTempSongs();
+    const allSongs = await fetchAllRankedSongs(existing);
 
-    const songs = await fetchAllRankedSongs();
-    const bplist = generateBplist(songs);
-    fs.writeFileSync(BP_LIST_PATH, bplist);
+    fs.writeFileSync(TMP_JSON_PATH, JSON.stringify(allSongs, null, 2));
+    fs.writeFileSync(BP_LIST_PATH, generateBplist(allSongs));
 
-    console.log(`ranked.bplist updated with ${songs.length} songs.`);
-  } catch (error) {
-    console.error("Error updating ranked.bplist:", error);
+    console.log(`✅ ranked.bplist updated with ${allSongs.length} songs.`);
+  } catch (e) {
+    console.error("❌ Error generating playlist:", e);
+  } finally {
+    isGenerating = false;
   }
 }
 
-// Serve the existing playlist file for download
+app.get("/status", (req, res) => {
+  res.json({ generating: isGenerating });
+});
+
+app.get("/generate", async (req, res) => {
+  if (isGenerating) return res.status(202).send("Already generating...");
+  res.send("Generating playlist...");
+  updateBplist();
+});
+
 app.get("/ranked.bplist", (req, res) => {
+  if (isGenerating) {
+    return res.status(202).send("Playlist is still generating. Please wait.");
+  }
+
   if (fs.existsSync(BP_LIST_PATH)) {
     res.download(BP_LIST_PATH, "ranked.bplist");
   } else {
-    res.status(503).send("Playlist not ready yet, please try again later.");
+    res.status(404).send("Playlist not found.");
   }
 });
 
-// Admin-only manual refresh endpoint (simple token check, replace with your secret)
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "secret_admin_token";
-
-// Simple rate limiting for admin refresh (one request per 5 minutes)
-let lastRefreshTime = 0;
-
-app.post("/admin/refresh", (req, res) => {
-  const token = req.query.token;
-
-  if (token !== ADMIN_TOKEN) {
-    return res.status(403).send("Forbidden: invalid token");
-  }
-
-  const now = Date.now();
-  if (now - lastRefreshTime < 5 * 60 * 1000) {
-    return res.status(429).send("Too many requests: please wait before refreshing again.");
-  }
-
-  lastRefreshTime = now;
-
-  updateBplist()
-    .then(() => res.send("Playlist refreshed successfully."))
-    .catch(err => {
-      console.error("Admin refresh failed:", err);
-      res.status(500).send("Failed to refresh playlist.");
-    });
-});
-
-// Start the server and begin auto-updating playlist every 6 hours
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-
-  // Initial update on start
+  console.log(`🚀 Server running on port ${PORT}`);
   updateBplist();
-
-  // Scheduled update every 6 hours
-  setInterval(updateBplist, 6 * 60 * 60 * 1000);
+  setInterval(updateBplist, 6 * 60 * 60 * 1000); // every 6h
 });
