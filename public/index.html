@@ -11,7 +11,7 @@
       text-align: center;
       padding-top: 100px;
     }
-    a.download {
+    a.download, button.generate {
       display: inline-block;
       background: #00cc99;
       padding: 15px 25px;
@@ -20,15 +20,82 @@
       font-size: 1.5rem;
       text-decoration: none;
       transition: background 0.3s;
+      border: none;
+      cursor: pointer;
     }
-    a.download:hover {
+    a.download:hover, button.generate:hover {
       background: #00e6aa;
+    }
+    button.generate:disabled {
+      background: #555;
+      cursor: wait;
+    }
+    #status {
+      margin-top: 20px;
+      font-size: 1.2rem;
+      color: #ccc;
     }
   </style>
 </head>
 <body>
-  <h1>Download the ScoreSaber Ranked Playlist By EvanBlokEnder</h1>
+  <h1>ScoreSaber Ranked Playlist By EvanBlokEnder</h1>
   <p>Updated every 6 hours with the latest ranked maps.</p>
-  <a href="/ranked.bplist" class="download">Download ranked.bplist</a>
+
+  <button id="generateBtn" class="generate">Generate Latest Playlist</button>
+  <div id="status"></div>
+
+  <div id="download" style="display: none; margin-top: 30px;">
+    <a href="/ranked.bplist" class="download">Download ranked.bplist</a>
+  </div>
+
+  <script>
+    const generateBtn = document.getElementById("generateBtn");
+    const statusDiv = document.getElementById("status");
+    const downloadDiv = document.getElementById("download");
+
+    async function checkStatusLoop() {
+      const interval = setInterval(async () => {
+        const res = await fetch("/status");
+        const { generating } = await res.json();
+
+        if (!generating) {
+          clearInterval(interval);
+          generateBtn.disabled = false;
+          generateBtn.textContent = "Generate Latest Playlist";
+          statusDiv.textContent = "✅ Playlist is ready.";
+          downloadDiv.style.display = "block";
+        } else {
+          statusDiv.textContent = "⏳ Still generating... please wait.";
+        }
+      }, 2000);
+    }
+
+    generateBtn.onclick = async () => {
+      generateBtn.disabled = true;
+      generateBtn.textContent = "Generating...";
+      downloadDiv.style.display = "none";
+      statusDiv.textContent = "🛠️ Generating the full ScoreSaber ranked playlist...";
+
+      try {
+        await fetch("/generate");
+      } catch (e) {
+        statusDiv.textContent = "⚠️ Failed to start generation.";
+        generateBtn.disabled = false;
+        generateBtn.textContent = "Generate Latest Playlist";
+        return;
+      }
+
+      checkStatusLoop();
+    };
+
+    // Auto check if playlist is ready on load
+    window.addEventListener("load", async () => {
+      const res = await fetch("/status");
+      const { generating } = await res.json();
+      if (!generating) {
+        downloadDiv.style.display = "block";
+      }
+    });
+  </script>
 </body>
 </html>
