@@ -35,6 +35,7 @@ async function fetchRankedMaps() {
     );
 
     page++;
+    if (page > 100) break; // safety limit
   }
 
   return songs;
