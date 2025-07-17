@@ -1,4 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ScoreSaber Ranked Playlist by EvanBlokEnder</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #111;
+      color: #eee;
+      text-align: center;
+      padding-top: 100px;
+    }
+    a.download, button.generate, button.one-click {
+      display: inline-block;
+      background: #00cc99;
+      padding: 15px 25px;
+      border-radius: 8px;
+      color: #000;
+      font-size: 1.5rem;
+      text-decoration: none;
+      transition: background 0.3s;
+      border: none;
+      cursor: pointer;
+    }
+    a.download:hover, button.generate:hover, button.one-click:hover {
+      background: #00e6aa;
+    }
+    button.generate:disabled {
+      background: #555;
+      cursor: wait;
+    }
+    #status {
+      margin-top: 20px;
+      font-size: 1.2rem;
+      color: #ccc;
+    }
+    #download {
+      margin-top: 30px;
+    }
+  </style>
+</head>
+<body>
+  <h1>ScoreSaber Ranked Playlist By EvanBlokEnder</h1>
+  <p>Updated every 6 hours with the latest ranked maps.</p>
 
+  <button id="generateBtn" class="generate">Generate Latest Playlist</button>
+  <div id="status"></div>
+
+  <div id="download" style="display: none;">
+    <a href="/ranked.bplist" class="download">Download ranked.bplist</a>
+  </div>
+
+  <div id="oneClickDownload" style="display: none; margin-top: 20px;">
     <button id="oneClickBtn" class="one-click">One Click Download</button>
   </div>
 
@@ -64,4 +117,3 @@
   </script>
 </body>
 </html>
-
